@@ -5,8 +5,10 @@ import Adafruit_DHT
 import sys
 import requests
 
+#---------
 #Variables
-#Name of the curing chamber.
+#---------
+#Name of the curing chamber. Mostly useful if you have more than one.
 chamber = "meatsack"
 #Desired temp/humidity set here.
 desired_temperature = 55
@@ -16,44 +18,45 @@ drift_temperature = 5
 drive_humidity = 5
 
 
-#Set timestamp in seconds. (TIME! Got the time ti-ti-tickin in my head!)
+#Set timestamp in seconds. Only change if you need time accuracy beyond seconds.
 seconds = int(time.time())
 
-#Set GPIO pin specification
+#Set GPIO pin specification. DO NOT CHANGE!
 GPIO.setmode(GPIO.BCM)
 
-#Setup temp/humidity sensors. Only one is necessary. Dual internal and external provides peace of mind.
-#Supported sensors
+#----------------------------
+#Setup temp/humidity sensors.
+#----------------------------
+#Supported sensors. DO NOT CHANGE!
 DHT11  = 11
 DHT22  = 22
 AM2302 = 22
-#Used sensors
+
+#Setup variable for a sensor list. DO NOT CHANGE!
+all_sensors = [[]]
+
+#Installed sensors. This will vary depending on your setup. Only one internal
+#temp/humidity sensor is required. Uncomment/change the values for up to 4 sensors.
+#Sensor 1
+#--------
 sensor1_internal = AM2302
 sensor1_internal_pin = 27
-all_sensors = [sensor1_internal, sensor1_internal_pin]
-
+all_sensors[0] = [sensor1_internal, sensor1_internal_pin]
+#Sensor 2
+#--------
 sensor2_internal = DHT22
 sensor2_internal_pin = 22
-all_sensors.append([sensor2_internal, sensor2_internal_pin])
-#
+all_sensors.insert(1, [sensor2_internal, sensor2_internal_pin])
+#Sensor 3
+#--------
 # sensor1_external = Adafruit_DHT.AM2302
-# sensor1_external_pin = 27
-#
+# sensor1_external_pin = 30
+# all_sensors.insert(2, [sensor1_external, sensor1_external_pin])
+#Sensor 4
+#--------
 # sensor2_external = Adafruit_DHT.AM2302
-# sensor2_external_pin = 27
-# all_sensors = [
-#   [sensor1_internal, sensor1_internal_pin],
-#   [sensor2_internal, sensor2_internal_pin]
-#   ]
-
-# row = 0
-# rowList = all_sensors[row]
-print (all_sensors)
-
-# for sensor in all_sensors:
-#   print all_sensors[]
-#   # if sensor is not None:
-  #   print "%s sensor exists" % sensor
+# sensor2_external_pin = 31
+# all_sensors.insert(3, [sensor2_external, sensor2_external_pin])
 
 
 #Setup A/C relays and get current states.
