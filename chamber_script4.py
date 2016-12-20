@@ -47,22 +47,22 @@ allSensors = [[]]
 #--------
 sensor1Internal = AM2302
 sensor1InternalPin = 27
-allSensors[0] = [sensor1Internal, sensor1InternalPin]
+allSensors[0] = [sensor1Internal, sensor1InternalPin, "internal", "sensor1"]
 #Sensor 2
 #--------
 sensor2Internal = DHT22
 sensor2InternalPin = 22
-allSensors.insert(1, [sensor2Internal, sensor2InternalPin])
+allSensors.insert(1, [sensor2Internal, sensor2InternalPin, "internal", "sensor2"])
 #Sensor 3
 #--------
 # sensor1External = Adafruit_DHT.AM2302
 # sensor1ExternalPin = 30
-# allSensors.insert(2, [sensor1External, sensor1ExternalPin])
+# allSensors.insert(2, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
 #Sensor 4
 #--------
 # sensor2External = Adafruit_DHT.AM2302
 # sensor2ExternalPin = 31
-# allSensors.insert(3, [sensor2External, sensor2ExternalPin])
+# allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"])
 
 
 #Setup A/C relays and get current states.
@@ -92,6 +92,8 @@ r = requests.post(url, data=payload, headers=headers)
 
 #Function for getting temp/humidity readings.
 def sensorReading():
+  print(sensorIndex)
+  print allSensors[sensorIndex][2]
   humidity, temperature = Adafruit_DHT.read_retry(allSensors[sensorIndex][0], allSensors[sensorIndex][1])
   if humidity is not None and temperature is not None:
     print('Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity))
@@ -101,19 +103,18 @@ def sensorReading():
     #output to influxdb
     url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    payload = "temperature,area=internal,chamber=%s value=%d %d\n" % (chamberName, fahrenheitTemp, seconds)
-    r = requests.post(url, data=payload, headers=headers)
-    print payload
-    payload2 = "humidity,area=internal,chamber=%s value=%d %d\n" % (chamberName, humidity, seconds)
-    r = requests.post(url, data=payload2, headers=headers)
-    print payload2
+    temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], fahrenheitTemp, seconds)
+    r = requests.post(url, data=temperaturePayload, headers=headers)
+    print temperaturePayload
+    humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
+    r = requests.post(url, data=humidityPayload, headers=headers)
+    print humidityPayload
   else:
     print('Failed to get reading. Try again!')
 
 
 #Loop through all sensors and get a reading.
 for sensorIndex, val in enumerate(allSensors):
-  print(sensorIndex)
   sensorReading()
 
 
