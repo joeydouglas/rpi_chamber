@@ -16,6 +16,8 @@ dbPort = "8086"
 dbName = "test"
 #Name of the curing chamber. Mostly useful if you have more than one.
 chamberName = "meatsack"
+#Celcius or Fahrenheit (must be C or F).
+temperatureUnits = "F"
 #Desired temp/humidity set here.
 desiredTemperature = 55
 desiredHumidity = 80
@@ -103,7 +105,12 @@ def sensorReading():
     #output to influxdb
     url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], fahrenheitTemp, seconds)
+    #output in Fahrenheit.
+    if temperatureUnits is "F":
+      temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], fahrenheitTemp, seconds)
+    #output in Celcius.
+    else:
+      temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
     r = requests.post(url, data=temperaturePayload, headers=headers)
     print temperaturePayload
     humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
