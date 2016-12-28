@@ -103,19 +103,19 @@ def sensorReading():
     url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     #output in Fahrenheit.
-    if temperatureUnits is "F":
-      fahrenheitTemp = (temperature* 9)/5+32
-      temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], fahrenheitTemp, seconds)
-      print('Temp={0:0.1f}*F  Humidity={1:0.1f}%\n'.format(fahrenheitTemp, humidity))
-    #output in Celcius.
-    else:
-      temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
-      print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
+    # if temperatureUnits is "F":
+    #   fahrenheitTemp = (temperature* 9)/5+32
+    #   temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], fahrenheitTemp, seconds)
+    #   print('Temp={0:0.1f}*F  Humidity={1:0.1f}%\n'.format(fahrenheitTemp, humidity))
+    # #output in Celcius.
+    # else:
+    temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
+    print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
     r = requests.post(url, data=temperaturePayload, headers=headers)
-    #print temperaturePayload
-    humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
+    print temperaturePayload
+    humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
     r = requests.post(url, data=humidityPayload, headers=headers)
-    #print humidityPayload
+    print humidityPayload
   else:
     print('Failed to get reading. Try again!')
 
