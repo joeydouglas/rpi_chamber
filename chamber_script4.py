@@ -57,17 +57,18 @@ sensor2InternalPin = 22
 allSensors.insert(1, [sensor2Internal, sensor2InternalPin, "internal", "sensor2"])
 #Sensor 3
 #--------
-# sensor1External = Adafruit_DHT.AM2302
-# sensor1ExternalPin = 30
-# allSensors.insert(2, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
+sensor1External = AM2302
+sensor1ExternalPin = 27
+allSensors.insert(2, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
 #Sensor 4
 #--------
-# sensor2External = Adafruit_DHT.AM2302
-# sensor2ExternalPin = 31
-# allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"])
+sensor2External = AM2302
+sensor2ExternalPin = 27
+allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"])
 
-
+#----------------------------------------
 #Setup A/C relays and get current states.
+#----------------------------------------
 #Refrigerator
 fridgeRelayPin = 17
 GPIO.setup(fridgeRelayPin,GPIO.OUT)
@@ -85,7 +86,7 @@ fridgeRelayState = GPIO.input(fridgeRelayPin)
 # GPIO.setup(fridgeRelayPin,GPIO.OUT)
 # heaterRelayState = GPIO.input(heaterRelayPin)
 
-#Create Influxdb database
+#Create Influxdb database. (This will probably be done when the Influxdb container is initialized, but for now....)
 url = 'http://%s:%s/query' % (dbIP, dbPort)
 headers = {'Content-Type': 'application/x-www-form-urlencoded'}
 payload = "q=CREATE DATABASE %s\n" % dbName
@@ -94,28 +95,27 @@ r = requests.post(url, data=payload, headers=headers)
 
 #Function for getting temp/humidity readings.
 def sensorReading():
-  print(sensorIndex)
-  print allSensors[sensorIndex][2]
+  print "Reading %s, %s (ID %d)" % (allSensors[sensorIndex][3], allSensors[sensorIndex][2], sensorIndex)
   humidity, temperature = Adafruit_DHT.read_retry(allSensors[sensorIndex][0], allSensors[sensorIndex][1])
   if humidity is not None and temperature is not None:
-    print('Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity))
-    fahrenheitTemp = (temperature* 9)/5+32
-    print fahrenheitTemp
 
     #output to influxdb
     url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     #output in Fahrenheit.
     if temperatureUnits is "F":
+      fahrenheitTemp = (temperature* 9)/5+32
       temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], fahrenheitTemp, seconds)
+      print('Temp={0:0.1f}*F  Humidity={1:0.1f}%\n'.format(fahrenheitTemp, humidity))
     #output in Celcius.
     else:
       temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
+      print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
     r = requests.post(url, data=temperaturePayload, headers=headers)
-    print temperaturePayload
+    #print temperaturePayload
     humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%d %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
     r = requests.post(url, data=humidityPayload, headers=headers)
-    print humidityPayload
+    #print humidityPayload
   else:
     print('Failed to get reading. Try again!')
 
