@@ -73,17 +73,17 @@ fridgeRelayPin = 17
 GPIO.setup(fridgeRelayPin,GPIO.OUT)
 fridgeRelayState = GPIO.input(fridgeRelayPin)
 #Humidifier
-# humidifierRelayPin = 17
-# GPIO.setup(fridgeRelayPin,GPIO.OUT)
-# humidifierRelayState = GPIO.input(humidifierRelayPin)
+humidifierRelayPin = 0
+GPIO.setup(humidifierRelayPin,GPIO.OUT)
+humidifierRelayState = GPIO.input(humidifierRelayPin)
 #Dehumidifier
-# dehumidifierRelayPin = 17
-# GPIO.setup(fridgeRelayPin,GPIO.OUT)
-# dehumidifierRelayState = GPIO.input(dehumidifierRelayPin)
+dehumidifierRelayPin = 0
+GPIO.setup(dehumidifierRelayPin,GPIO.OUT)
+dehumidifierRelayState = GPIO.input(dehumidifierRelayPin)
 #Heater
-# heaterRelayPin = 17
-# GPIO.setup(fridgeRelayPin,GPIO.OUT)
-# heaterRelayState = GPIO.input(heaterRelayPin)
+heaterRelayPin = 0
+GPIO.setup(heaterRelayPin,GPIO.OUT)
+heaterRelayState = GPIO.input(heaterRelayPin)
 
 #Create Influxdb database. (This will probably be done when the Influxdb container is initialized, but for now....)
 url = 'http://%s:%s/query' % (dbIP, dbPort)
@@ -114,22 +114,36 @@ def influxdbOutput():
   temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
   print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
   r = requests.post(url, data=temperaturePayload, headers=headers)
-  #print temperaturePayload
+  print temperaturePayload
   humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
   r = requests.post(url, data=humidityPayload, headers=headers)
-  #print humidityPayload
+  print humidityPayload
 
 #Function to set relays based on sensor readings.
 def relayAdjustments():
+  #Fridge
+  global fridgeRelayState
   print "Fridge relay = %s" % fridgeRelayState
   print "Current temp = %.1f \nDesired temp = %.1f" %(temperature, desiredTemperature)
   print "Temp range", (desiredTemperature + driftTemperature), "-", (desiredTemperature - driftTemperature)
   if temperature > (desiredTemperature + driftTemperature):
-    GPIO.output(fridgeRelayPin,1)
+    fridgeRelayState = 1
+    GPIO.output(fridgeRelayPin,fridgeRelayState)
+    print(fridgeRelayState)
     print "Temperature too high. Turning on refrigerator."
   elif temperature < (desiredTemperature - driftTemperature):
-    GPIO.output(fridgeRelayPin,0)
+    fridgeRelayState = 0
+    GPIO.output(fridgeRelayPin,fridgeRelayState)
+    print(fridgeRelayState)
     print "Temperature too low. Turning off refrigerator."
+  #Output fridgeRelayState to Influxdb.
+  url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
+  headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+  fridgeRelayStatePayload = "fridgeRelayState,chamber=%s value=%d %d\n" % (chamberName, fridgeRelayState, seconds)
+  r = requests.post(url, data=fridgeRelayStatePayload, headers=headers)
+  #Heater
+  #Humidifier
+  #Dehumidifier
 
 #Loop through all sensors and get a reading.
 for sensorIndex, val in enumerate(allSensors):
