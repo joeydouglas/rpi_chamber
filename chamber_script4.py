@@ -17,7 +17,7 @@ dbName = "test"
 #Name of the curing chamber. Mostly useful if you have more than one.
 chamberName = "meatsack"
 #Desired temp/humidity set here.
-desiredTemperature = 20.5
+desiredTemperature = 16.5
 desiredHumidity = 80
 #Set the drift or fluctuation allowed before outputs are changed to adjust the temp/humidity.
 driftTemperature = 2
@@ -91,6 +91,21 @@ headers = {'Content-Type': 'application/x-www-form-urlencoded'}
 payload = "q=CREATE DATABASE %s\n" % dbName
 r = requests.post(url, data=payload, headers=headers)
 
+#Create class for watching relay states.
+class RelayWatcher:
+  def setState(self, state):
+    self.relayState = state
+    self.stateChange = 0
+
+  def updateState(self, new_state):
+    if self.relayState != new_state:
+      self.stateChange = 1
+
+#Create fridge object from RelayWatcher class and get it's initial state.
+fridge = RelayWatcher()
+fridge.setState(GPIO.input(fridgeRelayPin))
+
+
 #Function for getting temp/humidity readings.
 def sensorReading():
   print "Reading %s, %s (ID %d)" % (allSensors[sensorIndex][3], allSensors[sensorIndex][2], sensorIndex)
@@ -107,17 +122,28 @@ def sensorReading():
     print('Failed to get reading. Try again!')
 
 
-#Function to output to Influxdb.
+#Function to output temperature and humidity readings to Influxdb.
 def influxdbOutput():
   url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
   headers = {'Content-Type': 'application/x-www-form-urlencoded'}
   temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
   print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
   r = requests.post(url, data=temperaturePayload, headers=headers)
-  print temperaturePayload
+  #print temperaturePayload
   humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
   r = requests.post(url, data=humidityPayload, headers=headers)
-  print humidityPayload
+  #print humidityPayload
+
+#Output relay states to Influxdb.
+def influxRelayOutput():
+  url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
+  headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+  fridgeRelayStatePayload = "fridgeRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, fridge.stateChange, fridgeRelayState, seconds)
+  r = requests.post(url, data=fridgeRelayStatePayload, headers=headers)
+  #Heater
+  #Humidifier
+  #Dehumidifier
+
 
 #Function to set relays based on sensor readings.
 def relayAdjustments():
@@ -131,19 +157,16 @@ def relayAdjustments():
     GPIO.output(fridgeRelayPin,fridgeRelayState)
     print(fridgeRelayState)
     print "Temperature too high. Turning on refrigerator."
+    fridge.updateState(1)
+    print "Fridge state change is %d" % fridge.stateChange
   elif temperature < (desiredTemperature - driftTemperature):
     fridgeRelayState = 0
     GPIO.output(fridgeRelayPin,fridgeRelayState)
     print(fridgeRelayState)
     print "Temperature too low. Turning off refrigerator."
-  #Output fridgeRelayState to Influxdb.
-  url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
-  headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-  fridgeRelayStatePayload = "fridgeRelayState,chamber=%s value=%d %d\n" % (chamberName, fridgeRelayState, seconds)
-  r = requests.post(url, data=fridgeRelayStatePayload, headers=headers)
-  #Heater
-  #Humidifier
-  #Dehumidifier
+    fridge.updateState(0)
+    print "Fridge state change is %d" % fridge.stateChange
+  influxRelayOutput()
 
 #Loop through all sensors and get a reading.
 for sensorIndex, val in enumerate(allSensors):
