@@ -70,20 +70,12 @@ allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"
 #----------------------------------------
 #Refrigerator
 fridgeRelayPin = 17
-GPIO.setup(fridgeRelayPin,GPIO.OUT)
-fridgeRelayState = GPIO.input(fridgeRelayPin)
 #Humidifier
 humidifierRelayPin = 0
-GPIO.setup(humidifierRelayPin,GPIO.OUT)
-humidifierRelayState = GPIO.input(humidifierRelayPin)
 #Dehumidifier
 dehumidifierRelayPin = 0
-GPIO.setup(dehumidifierRelayPin,GPIO.OUT)
-dehumidifierRelayState = GPIO.input(dehumidifierRelayPin)
 #Heater
 heaterRelayPin = 0
-GPIO.setup(heaterRelayPin,GPIO.OUT)
-heaterRelayState = GPIO.input(heaterRelayPin)
 
 #Create Influxdb database. (This will probably be done when the Influxdb container is initialized, but for now....)
 url = 'http://%s:%s/query' % (dbIP, dbPort)
@@ -92,19 +84,25 @@ payload = "q=CREATE DATABASE %s\n" % dbName
 r = requests.post(url, data=payload, headers=headers)
 
 #Create class for watching relay states.
-class RelayWatcher:
+class Relay:
+  def __init__(self, pin):
+    self.pin = pin
+    GPIO.setup(self.pin,GPIO.OUT)
+
   def setState(self, state):
     self.relayState = state
     self.stateChange = 0
 
-  def updateState(self, new_state):
-    if self.relayState != new_state:
+  def updateState(self, newState):
+    if self.relayState != newState:
       self.stateChange = 1
+      self.relayState = newState
+    else:
+      self.relayState = newState
 
-#Create fridge object from RelayWatcher class and get it's initial state.
-fridge = RelayWatcher()
-fridge.setState(GPIO.input(fridgeRelayPin))
-
+#Create fridge object from Relayclass and get it's initial state.
+fridge = Relay(fridgeRelayPin)
+fridge.setState(GPIO.input(fridge.pin))
 
 #Function for getting temp/humidity readings.
 def sensorReading():
@@ -117,13 +115,13 @@ def sensorReading():
     if sensorIndex is 0:
       relayAdjustments()
     #Output to Influxdb.
-    influxdbOutput()
+    influxSensorOutput()
   else:
     print('Failed to get reading. Try again!')
 
 
 #Function to output temperature and humidity readings to Influxdb.
-def influxdbOutput():
+def influxSensorOutput():
   url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
   headers = {'Content-Type': 'application/x-www-form-urlencoded'}
   temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
@@ -138,8 +136,9 @@ def influxdbOutput():
 def influxRelayOutput():
   url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
   headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-  fridgeRelayStatePayload = "fridgeRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, fridge.stateChange, fridgeRelayState, seconds)
+  fridgeRelayStatePayload = "fridgeRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, fridge.stateChange, fridge.relayState, seconds)
   r = requests.post(url, data=fridgeRelayStatePayload, headers=headers)
+  #print(fridgeRelayStatePayload)
   #Heater
   #Humidifier
   #Dehumidifier
@@ -147,29 +146,25 @@ def influxRelayOutput():
 
 #Function to set relays based on sensor readings.
 def relayAdjustments():
-  #Fridge
-  global fridgeRelayState
-  print "Fridge relay = %s" % fridgeRelayState
+  #Temperature (Fridge and heater).
+  print "Fridge relay = %d" % fridge.relayState
   print "Current temp = %.1f \nDesired temp = %.1f" %(temperature, desiredTemperature)
   print "Temp range", (desiredTemperature + driftTemperature), "-", (desiredTemperature - driftTemperature)
   if temperature > (desiredTemperature + driftTemperature):
-    fridgeRelayState = 1
-    GPIO.output(fridgeRelayPin,fridgeRelayState)
-    print(fridgeRelayState)
-    print "Temperature too high. Turning on refrigerator."
     fridge.updateState(1)
+    GPIO.output(fridge.pin,fridge.relayState)
+    print(fridge.relayState)
+    print "Temperature too high. Turning on refrigerator."
     print "Fridge state change is %d" % fridge.stateChange
   elif temperature < (desiredTemperature - driftTemperature):
-    fridgeRelayState = 0
-    GPIO.output(fridgeRelayPin,fridgeRelayState)
-    print(fridgeRelayState)
-    print "Temperature too low. Turning off refrigerator."
     fridge.updateState(0)
+    GPIO.output(fridge.pin,fridge.relayState)
+    print(fridge.relayState)
+    print "Temperature too low. Turning off refrigerator."
     print "Fridge state change is %d" % fridge.stateChange
   else:
     #turn off heater and fridge.
-    print "SWEET SPOT BABY!!!!"
-
+    print "Temperature is within range!"
   influxRelayOutput()
 
 #Loop through all sensors and get a reading.
