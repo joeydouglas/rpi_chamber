@@ -18,7 +18,7 @@ dbName = "meatsack"
 chamberName = "meatsack"
 #Desired temp/humidity set here.
 desiredTemperature = 22.5
-desiredHumidity = 45
+desiredHumidity = 24
 #Set the drift or fluctuation allowed before outputs are changed to adjust the temp/humidity.
 driftTemperature = 2
 driftHumidity = 2
@@ -71,11 +71,11 @@ allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"
 #Refrigerator
 fridgeRelayPin = 17
 #Humidifier
-humidifierRelayPin = 0
+humidifierRelayPin = 23
 #Dehumidifier
 dehumidifierRelayPin = 0
 #Heater
-heaterRelayPin = 0
+heaterRelayPin = 24
 
 ##########################################################################
 #DO NOT EDIT BELOW This
@@ -120,6 +120,33 @@ humidifier.setState(GPIO.input(humidifier.pin))
 #Create dehumidifier object from Relayclass and get it's initial state.
 dehumidifier = Relay(dehumidifierRelayPin)
 dehumidifier.setState(GPIO.input(dehumidifier.pin))
+
+#Functions for turning devices on/off.
+def fridgeOn():
+  fridge.updateState(1)
+  GPIO.output(fridge.pin,fridge.relayState)
+def fridgeOff():
+  fridge.updateState(0)
+  GPIO.output(fridge.pin,fridge.relayState)
+def heaterOn():
+  heater.updateState(1)
+  GPIO.output(heater.pin,heater.relayState)
+def heaterOff():
+  heater.updateState(0)
+  GPIO.output(heater.pin,heater.relayState)
+def humidifierOn():
+  humidifier.updateState(1)
+  GPIO.output(humidifier.pin,humidifier.relayState)
+def humidifierOff():
+  humidifier.updateState(0)
+  GPIO.output(humidifier.pin,humidifier.relayState)
+def dehumidifierOn():
+  dehumidifier.updateState(1)
+  GPIO.output(dehumidifier.pin,dehumidifier.relayState)
+def dehumidifierOff():
+  dehumidifier.updateState(0)
+  GPIO.output(dehumidifier.pin,dehumidifier.relayState)
+
 
 #Function for getting temp/humidity readings.
 def sensorReading():
@@ -171,71 +198,40 @@ def influxRelayOutput():
 #Function to set relays based on sensor readings.
 def relayAdjustments():
   #Temperature (Fridge and heater).
-  print "Fridge relay = %d" % fridge.relayState
-  print "Current temp = %.1f \nDesired temp = %.1f" %(temperature, desiredTemperature)
-  print "Temp range", (desiredTemperature + driftTemperature), "-", (desiredTemperature - driftTemperature)
-  #Turn fridge on if temperature is too high.
   if temperature > (desiredTemperature + driftTemperature):
-    fridge.updateState(1)
-    GPIO.output(fridge.pin,fridge.relayState)
-    heater.updateState(0)
-    GPIO.output(heater.pin,heater.relayState)
-    print(fridge.relayState)
+    fridgeOn()
+    heaterOff()
     print "Temperature too high. Turning on refrigerator."
-    print "Fridge state change is %d" % fridge.stateChange
-  #Turn fridge off if temperature is too low.
   elif temperature < (desiredTemperature - driftTemperature):
-    fridge.updateState(0)
-    GPIO.output(fridge.pin,fridge.relayState)
-    heater.updateState(1)
-    GPIO.output(heater.pin,heater.relayState)
-    print(fridge.relayState)
+    fridgeOff()
+    heaterOn()
     print "Temperature too low. Turning off refrigerator."
-    print "Fridge state change is %d" % fridge.stateChange
-  #Turn on heater if temperature is way too low.
   elif (desiredTemperature - driftTemperature) <= temperature <= (desiredTemperature + driftTemperature):
-    fridge.updateState(0)
-    GPIO.output(fridge.pin,fridge.relayState)
-    heater.updateState(0)
-    GPIO.output(heater.pin,heater.relayState)
-    print(heater.relayState)
+    fridgeOff()
+    heaterOff()
     print "Temperature is within range!"
   else:
-    #Turn off heater and fridge.
     print "Temperature is within range!"
 
   #Humidity
   if humidity > (desiredHumidity + driftHumidity):
-    humidifier.updateState(0)
-    GPIO.output(humidifier.pin,humidifier.relayState)
-    dehumidifier.updateState(1)
-    GPIO.output(dehumidifier.pin,dehumidifier.relayState)
-    print(humidifier.relayState)
+    humidifierOff()
+    dehumidifierOn()
     print "Humidity too high. Turning off humidifier."
-    print "humidifier state change is %d" % humidifier.stateChange
-  #Turn fridge off if temperature is too low.
   elif humidity < (desiredHumidity - driftHumidity):
-    humidifier.updateState(1)
-    GPIO.output(humidifier.pin,humidifier.relayState)
-    dehumidifier.updateState(0)
-    GPIO.output(dehumidifier.pin,dehumidifier.relayState)
-    print(humidifier.relayState)
+    humidifierOn()
+    dehumidifierOff
     print "Humidity too low. Turning on humidifier."
-    print "humidifier state change is %d" % humidifier.stateChange
-  #Turn on heater if temperature is way too low.
   elif (desiredHumidity - driftHumidity) <= humidity <= (desiredHumidity + driftHumidity):
-    humidifier.updateState(0)
-    GPIO.output(humidifier.pin,humidifier.relayState)
-    dehumidifier.updateState(0)
-    GPIO.output(dehumidifier.pin,dehumidifier.relayState)
-    print(humidifier.relayState)
+    humidifierOff()
+    dehumidifierOff()
     print "Humidity is within range!"
   else:
-    #Turn off heater and fridge.
     print "Humidity is within range!"
 
   #Send state information to Influxdb
   influxRelayOutput()
+
 
 #Loop through all sensors and get a reading.
 for sensorIndex, val in enumerate(allSensors):
