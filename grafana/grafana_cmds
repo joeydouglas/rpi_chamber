@@ -1,0 +1,2 @@
+curl -XPOST -i http://admin:admin@192.168.1.30:3000/api/datasources --data-binary @./CuringChdashboards/db --data-binary @./CuringChamberDashboard.json -H "Content-Type: application/json"
+curl -XPOST -i http://admin:admin@192.168.1.30:3000/api/dashboards/db --data-binary @./test.json -H "Content-Type: application/json"

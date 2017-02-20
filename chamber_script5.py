@@ -10,15 +10,15 @@ import requests
 #---------
 #Database IP
 dbIP = "192.168.1.30"
-#Database port
+#Influxdb port. Default is 8086.
 dbPort = "8086"
 #Influxdb database name
 dbName = "meatsack"
 #Name of the curing chamber. Mostly useful if you have more than one.
 chamberName = "meatsack"
 #Desired temp/humidity set here.
-desiredTemperature = 22.5
-desiredHumidity = 24
+desiredTemperature = 15.5
+desiredHumidity = 80
 #Set the drift or fluctuation allowed before outputs are changed to adjust the temp/humidity.
 driftTemperature = 2
 driftHumidity = 2
@@ -47,46 +47,47 @@ allSensors = [[]]
 #Sensor 1 - Primary sensor - will determine which devices are turned on/off.
 #--------
 sensor1Internal = AM2302
-sensor1InternalPin = 27
+sensor1InternalPin = 22
 allSensors[0] = [sensor1Internal, sensor1InternalPin, "internal", "sensor1"]
 #Sensor 2 - Optional additional sensor.
 #--------
-sensor2Internal = DHT22
-sensor2InternalPin = 22
-allSensors.insert(1, [sensor2Internal, sensor2InternalPin, "internal", "sensor2"])
+#sensor2Internal = DHT22
+#sensor2InternalPin = 0
+#allSensors.insert(1, [sensor2Internal, sensor2InternalPin, "internal", "sensor2"])
 #Sensor 3 - Optional additional sensor.
 #--------
 sensor1External = AM2302
 sensor1ExternalPin = 27
-allSensors.insert(2, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
+allSensors.insert(1, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
 #Sensor 4 - Optional additional sensor.
 #--------
-sensor2External = AM2302
-sensor2ExternalPin = 27
-allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"])
+#sensor2External = AM2302
+#sensor2ExternalPin = 0
+#allSensors.insert(3, [sensor2External, sensor2ExternalPin, "external", "sensor2"])
 
 #----------------------------------------
 #Setup A/C relays and get current states.
 #----------------------------------------
 #Refrigerator
-fridgeRelayPin = 17
+fridgeRelayPin = 23
 #Humidifier
-humidifierRelayPin = 23
+humidifierRelayPin = 24
 #Dehumidifier
-dehumidifierRelayPin = 0
+dehumidifierRelayPin = 25
 #Heater
-heaterRelayPin = 24
+heaterRelayPin = 17
+
 
 ##########################################################################
 #DO NOT EDIT BELOW This
 ##########################################################################
-
 
 #Create Influxdb database. (This will probably be done when the Influxdb container is initialized, but for now....)
 url = 'http://%s:%s/query' % (dbIP, dbPort)
 headers = {'Content-Type': 'application/x-www-form-urlencoded'}
 payload = "q=CREATE DATABASE %s\n" % dbName
 r = requests.post(url, data=payload, headers=headers)
+
 
 #Create class for watching relay states.
 class Relay:
@@ -105,21 +106,28 @@ class Relay:
     else:
       self.relayState = newState
 
-#Create fridge object from Relayclass and get it's initial state.
-fridge = Relay(fridgeRelayPin)
-fridge.setState(GPIO.input(fridge.pin))
 
-#Create heater object from Relayclass and get it's initial state.
-heater = Relay(heaterRelayPin)
-heater.setState(GPIO.input(heater.pin))
+def getRelayState():
+  #Create fridge object from Relayclass and get it's initial state.
+  global fridge
+  fridge = Relay(fridgeRelayPin)
+  fridge.setState(GPIO.input(fridge.pin))
 
-#Create humidifier object from Relayclass and get it's initial state.
-humidifier = Relay(humidifierRelayPin)
-humidifier.setState(GPIO.input(humidifier.pin))
+  #Create heater object from Relayclass and get it's initial state.
+  global heater
+  heater = Relay(heaterRelayPin)
+  heater.setState(GPIO.input(heater.pin))
 
-#Create dehumidifier object from Relayclass and get it's initial state.
-dehumidifier = Relay(dehumidifierRelayPin)
-dehumidifier.setState(GPIO.input(dehumidifier.pin))
+  #Create humidifier object from Relayclass and get it's initial state.
+  global humidifier
+  humidifier = Relay(humidifierRelayPin)
+  humidifier.setState(GPIO.input(humidifier.pin))
+
+  #Create dehumidifier object from Relayclass and get it's initial state.
+  global dehumidifier
+  dehumidifier = Relay(dehumidifierRelayPin)
+  dehumidifier.setState(GPIO.input(dehumidifier.pin))
+
 
 #Functions for turning devices on/off.
 def fridgeOn():
@@ -168,13 +176,17 @@ def sensorReading():
 def influxSensorOutput():
   url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
   headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-  temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], temperature, seconds)
+  temperaturePayload = "temperature,chamber=%s,sensor=%s,location=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], desiredTemperature, driftTemperature, temperature, seconds)
   print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
   r = requests.post(url, data=temperaturePayload, headers=headers)
   #print temperaturePayload
-  humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], humidity, seconds)
+  humidityPayload = "humidity,chamber=%s,sensor=%s,location=%s,desiredHumidity=%.1f,driftHumidity=%s value=%.1f %d\n" % (chamberName, allSensors[sensorIndex][3], allSensors[sensorIndex][2], desiredHumidity, driftHumidity, humidity, seconds)
   r = requests.post(url, data=humidityPayload, headers=headers)
-  #print humidityPayload
+  #Influxdb doesn't allow you to query tags based on time so here's some redundant measurements. Wheeee!
+  paramsPayloadTemp = "params,chamber=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (chamberName, desiredTemperature, driftTemperature, desiredTemperature, seconds)
+  r = requests.post(url, data=paramsPayloadTemp, headers=headers)
+  print paramsPayloadTemp
+
 
 #Output relay states to Influxdb.
 def influxRelayOutput():
@@ -213,26 +225,43 @@ def relayAdjustments():
   else:
     print "Temperature is within range!"
 
-  #Humidity
-  if humidity > (desiredHumidity + driftHumidity):
-    humidifierOff()
-    dehumidifierOn()
-    print "Humidity too high. Turning off humidifier."
-  elif humidity < (desiredHumidity - driftHumidity):
-    humidifierOn()
-    dehumidifierOff
-    print "Humidity too low. Turning on humidifier."
-  elif (desiredHumidity - driftHumidity) <= humidity <= (desiredHumidity + driftHumidity):
-    humidifierOff()
-    dehumidifierOff()
-    print "Humidity is within range!"
-  else:
-    print "Humidity is within range!"
+  #Humidity (Humidifier and dehumidifier).
+  if humidity is not None and humidity < 105:
+    if humidity > (desiredHumidity + driftHumidity):
+      humidifierOff()
+      dehumidifierOn()
+      print "Humidity too high. Turning off humidifier."
+    elif humidity < (desiredHumidity - driftHumidity):
+      humidifierOn()
+      dehumidifierOff()
+      print "Humidity too low. Turning on humidifier."
+    elif (desiredHumidity - driftHumidity) <= humidity <= (desiredHumidity + driftHumidity):
+      humidifierOff()
+      dehumidifierOff()
+      print "Humidity is within range!"
+    else:
+      print "Humidity is within range!"
 
   #Send state information to Influxdb
   influxRelayOutput()
 
 
 #Loop through all sensors and get a reading.
-for sensorIndex, val in enumerate(allSensors):
-  sensorReading()
+def sensorLoop():
+  global sensorIndex
+  global seconds
+  for sensorIndex, val in enumerate(allSensors):
+    seconds = int(time.time())
+    if allSensors[0]:
+      getRelayState()
+    sensorReading()
+    time.sleep(3)
+    if allSensors[sensorIndex] == allSensors[-1]:
+      print "last sensor, sleeping 10s"
+      time.sleep(10)
+      primary()
+
+def primary():
+  sensorLoop()
+
+sensorLoop()

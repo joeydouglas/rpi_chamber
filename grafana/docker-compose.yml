@@ -1,0 +1,19 @@
+version: '2'
+
+services:
+  grafana:
+    image: fg2it/grafana-armhf:v4.0.2
+    ports: 
+      - "3000:3000"
+    restart: always
+
+  grafana_datasources:
+    depends_on: 
+      - grafana
+    image: curl_test
+    command: '-XPOST -i http://admin:admin@192.168.1.30:3000/api/datasources --data-binary @./datasources.json -H "Content-Type: application/json"'
+  grafana_dashboards:
+    depends_on:
+      - grafana_datasources
+    image: curl_test
+    command: "sleep 10 && -XPOST -i http://admin:admin@192.168.1.30:3000/api/dashboards/db --data-binary @./chamber_dashboard.json -H \"Content-Type: application/json\""

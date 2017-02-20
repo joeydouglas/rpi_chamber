@@ -1,0 +1,7 @@
+"grafana":{"dashboards": [
+          {
+            "name": "test1",
+            "file": "CuringChamberDashboard.json",
+            "dash_name": "Test 1"
+          },
+}
