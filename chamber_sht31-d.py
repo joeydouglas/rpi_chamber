@@ -1,9 +1,14 @@
 #!/usr/bin/python
 import RPi.GPIO as GPIO
 import time
+from datetime import datetime
+#from timeit import default_timer as timer
 import sys
+#import math
 import requests
+import Adafruit_DHT
 from Adafruit_SHT31 import *
+
 
 #---------
 #Variables
@@ -20,8 +25,12 @@ chamberName = "meatsack"
 desiredTemperature = 15.5
 desiredHumidity = 80
 #Set the drift or fluctuation allowed before outputs are changed to adjust the temp/humidity.
-driftTemperature = 2
+driftTemperature = 1
 driftHumidity = 2
+#How long should the program sleep in between sensor readings?
+sensorSleep = 5
+#How long must the fridge be on/off for? This prevents the fridge from cycling on/off every few seconds.
+fridgeCycle = 60
 
 
 #Set timestamp in seconds. Only change if you need time accuracy beyond seconds.
@@ -35,9 +44,9 @@ GPIO.setwarnings(False)
 #Setup temp/humidity sensors.
 #----------------------------
 #Supported sensors. DO NOT CHANGE!
-# DHT11  = 11
-# DHT22  = 22
-# AM2302 = 22
+DHT11  = 11
+DHT22  = 22
+AM2302 = 22
 SHT31_1 = SHT31(address = 0x44)
 #SHT31_2 = SHT31(address = 0x45)
 
@@ -49,18 +58,18 @@ allSensors = [[]]
 #Sensor 1 - Primary sensor - will determine which devices are turned on/off.
 #--------
 sensor1Internal = SHT31_1
-sensor1InternalPin = 22
+sensor1InternalPin = "i2c"
 allSensors[0] = [sensor1Internal, sensor1InternalPin, "internal", "sensor1"]
 #Sensor 2 - Optional additional sensor.
 #--------
-#sensor2Internal = DHT22
-#sensor2InternalPin = 0
+#sensor2Internal = AM2302
+#sensor2InternalPin = 22
 #allSensors.insert(1, [sensor2Internal, sensor2InternalPin, "internal", "sensor2"])
 #Sensor 3 - Optional additional sensor.
 #--------
-#sensor1External = SHT31_2
-#sensor1ExternalPin = 27
-#allSensors.insert(1, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
+sensor1External = AM2302
+sensor1ExternalPin = 27
+allSensors.insert(1, [sensor1External, sensor1ExternalPin, "external", "sensor1"])
 #Sensor 4 - Optional additional sensor.
 #--------
 #sensor2External = AM2302
@@ -105,30 +114,45 @@ class Relay:
     if self.relayState != newState:
       self.stateChange = 1
       self.relayState = newState
+      self.startTimer = datetime.now()
     else:
       self.stateChange = 0
       self.relayState = newState
 
+  def updateTimer(self):
+    self.stopTimer = datetime.now()
 
 def getRelayState():
   #Create fridge object from Relayclass and get it's initial state.
-  global fridge
-  fridge = Relay(fridgeRelayPin)
+  try:
+    fridge
+  except NameError:
+    global fridge
+    fridge = Relay(fridgeRelayPin)
   fridge.setState(GPIO.input(fridge.pin))
 
   #Create heater object from Relayclass and get it's initial state.
-  global heater
-  heater = Relay(heaterRelayPin)
+  try:
+    heater
+  except NameError:
+    global heater
+    heater = Relay(heaterRelayPin)
   heater.setState(GPIO.input(heater.pin))
 
   #Create humidifier object from Relayclass and get it's initial state.
-  global humidifier
-  humidifier = Relay(humidifierRelayPin)
+  try:
+    humidifier
+  except NameError:
+    global humidifier
+    humidifier = Relay(humidifierRelayPin)
   humidifier.setState(GPIO.input(humidifier.pin))
 
   #Create dehumidifier object from Relayclass and get it's initial state.
-  global dehumidifier
-  dehumidifier = Relay(dehumidifierRelayPin)
+  try:
+    dehumidifier
+  except NameError:
+    global dehumidifier
+    dehumidifier = Relay(dehumidifierRelayPin)
   dehumidifier.setState(GPIO.input(dehumidifier.pin))
 
 
@@ -164,10 +188,12 @@ def sensorReading():
   print "Reading %s, %s (ID %d)" % (allSensors[sensorIndex][3], allSensors[sensorIndex][2], sensorIndex)
   global temperature, humidity
   #Commented out code to get reading from DHT sensors.
-  #humidity, temperature = Adafruit_DHT.read_retry(allSensors[sensorIndex][0], allSensors[sensorIndex][1])
-  temperature = sensor1Internal.read_temperature()
-  humidity = sensor1Internal.read_humidity()
-  #Ensure you get a reading from the sensor before continuing.
+  if allSensors[sensorIndex][1] == "i2c":
+    temperature = sensor1Internal.read_temperature()
+    humidity = sensor1Internal.read_humidity()
+  else:
+    humidity, temperature = Adafruit_DHT.read_retry(allSensors[sensorIndex][0], allSensors[sensorIndex][1])
+#Ensure you get a reading from the sensor before continuing.
   if humidity is not None and temperature is not None:
     #Adjust relay states based on primary sensor(0) reading.
     if sensorIndex is 0:
@@ -191,7 +217,6 @@ def influxSensorOutput():
   #Influxdb doesn't allow you to query tags based on time so here's some redundant measurements. Wheeee!
   paramsPayloadTemp = "params,chamber=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (chamberName, desiredTemperature, driftTemperature, desiredTemperature, seconds)
   r = requests.post(url, data=paramsPayloadTemp, headers=headers)
-  print paramsPayloadTemp
 
 
 #Output relay states to Influxdb.
@@ -207,7 +232,6 @@ def influxRelayOutput():
   #humidifier #################
   humidifierRelayStatePayload = "humidifierRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, humidifier.stateChange, humidifier.relayState, seconds)
   r = requests.post(url, data=humidifierRelayStatePayload, headers=headers)
-  print(humidifierRelayStatePayload)
   #dehumidifier
   dehumidifierRelayStatePayload = "dehumidifierRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, dehumidifier.stateChange, dehumidifier.relayState, seconds)
   r = requests.post(url, data=dehumidifierRelayStatePayload, headers=headers)
@@ -217,17 +241,47 @@ def influxRelayOutput():
 def relayAdjustments():
   #Temperature (Fridge and heater).
   if temperature > (desiredTemperature + driftTemperature):
-    fridgeOn()
+    if hasattr(fridge, 'startTimer'):
+      print "FRIDGE Timer-----"
+      fridge.updateTimer()
+      fridgeTimer = fridge.stopTimer - fridge.startTimer
+      print(fridgeTimer.total_seconds())
+      if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 0):
+        print "Fridge has been off long enough!!!!!!!!!!!!!!!!!"
+        fridgeOn()
+        print "Fridge turning on!"
+    else:
+      fridgeOn()
     heaterOff()
     #Turn on humidifier with fridge to limit the sudden drop in humidity.
     humidifierOn()
     print "Temperature too high. Turning on refrigerator."
   elif temperature < (desiredTemperature - driftTemperature):
-    fridgeOff()
+    if hasattr(fridge, 'startTimer'):
+      print "FRIDGE Timer-----"
+      fridge.updateTimer()
+      fridgeTimer = fridge.stopTimer - fridge.startTimer
+      print(fridgeTimer.total_seconds())
+      if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 1):
+        print "Fridge has been on long enough!!!!!!!!!!!!!!!!!"
+        fridgeOff()
+        print "Fridge turning off!"
+    else:
+      fridgeOff()
     heaterOn()
     print "Temperature too low. Turning off refrigerator."
   elif (desiredTemperature - driftTemperature) <= temperature <= (desiredTemperature + driftTemperature):
-    fridgeOff()
+    if hasattr(fridge, 'startTimer'):
+      print "FRIDGE Timer-----"
+      fridge.updateTimer()
+      fridgeTimer = fridge.stopTimer - fridge.startTimer
+      print(fridgeTimer.total_seconds())
+      if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 1):
+        print "Fridge has been on long enough!!!!!!!!!!!!!!!!!!!!"
+        fridgeOff()
+        print "Fridge turning off!"
+    else:
+      fridgeOff()
     heaterOff()
     print "Temperature is within range!"
   else:
@@ -266,15 +320,18 @@ def sensorLoop():
     seconds = int(time.time())
     if allSensors[0]:
       getRelayState()
+    #   if hasattr(dehumidifier, 'startTimer'):
+    #     print "DEHUMIDIFIER Timer!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    #     dehumidifier.updateTimer()
+    #     dehumidifierTimer = dehumidifier.stopTimer - dehumidifier.startTimer
+    #     print(dehumidifierTimer.total_seconds())
     sensorReading()
     #time.sleep(3)
     if allSensors[sensorIndex] == allSensors[-1]:
-      print "last sensor, sleeping 10s"
-      time.sleep(5)
+      print "last sensor has been read, sleeping %s seconds.............................\n\n" %sensorSleep
+      time.sleep(sensorSleep)
 
-#def primary():
-#  sensorLoop()
+#Run this sucker continually.
 infiniteLoop = 1
 while infiniteLoop == 1:
   sensorLoop()
-
