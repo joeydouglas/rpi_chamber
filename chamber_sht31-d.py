@@ -26,7 +26,7 @@ desiredTemperature = 15.5
 desiredHumidity = 80
 #Set the drift or fluctuation allowed before outputs are changed to adjust the temp/humidity.
 driftTemperature = 1
-driftHumidity = 2
+driftHumidity = 1
 #How long should the program sleep in between sensor readings?
 sensorSleep = 5
 #How long must the fridge be on/off for? This prevents the fridge from cycling on/off every few seconds.
@@ -105,11 +105,9 @@ class Relay:
   def __init__(self, pin):
     self.pin = pin
     GPIO.setup(self.pin,GPIO.OUT)
-
   def setState(self, state):
     self.relayState = state
     self.stateChange = 0
-
   def updateState(self, newState):
     if self.relayState != newState:
       self.stateChange = 1
@@ -118,9 +116,14 @@ class Relay:
     else:
       self.stateChange = 0
       self.relayState = newState
-
   def updateTimer(self):
     self.stopTimer = datetime.now()
+  def stallTimerCreate(self):
+    self.stallStart = datetime.now()
+  def stallTimerUpdate(self):
+    self.stallStop = datetime.now()
+  def setOverride(self, override):
+    self.override = override
 
 def getRelayState():
   #Create fridge object from Relayclass and get it's initial state.
@@ -157,7 +160,29 @@ def getRelayState():
 
 
 #Functions for turning devices on/off.
+def humidifierOn():
+  humidifier.updateState(1)
+  GPIO.output(humidifier.pin,humidifier.relayState)
+def humidifierOff():
+  humidifier.updateState(0)
+  GPIO.output(humidifier.pin,humidifier.relayState)
+  humidifier.override(0)
 def fridgeOn():
+  humidifier.setOverride(1)
+  humidifierOn()
+  fridgeStall = 20
+  fridge.stallTimerCreate()
+  fridge.stallTimerUpdate()
+  stallTimer = fridge.stallStop - fridge.stallStart
+  while (stallTimer.total_seconds() < fridgeStall):
+    print 'Running Humidifier for 30 seconds before turning on Fridge*********'
+    print stallTimer.total_seconds()
+    time.sleep(5)
+    fridge.stallTimerUpdate()
+    stallTimer = fridge.stallStop - fridge.stallStart
+  fridgeOnFinal()
+  humidifier.setOverride(0)
+def fridgeOnFinal():
   fridge.updateState(1)
   GPIO.output(fridge.pin,fridge.relayState)
 def fridgeOff():
@@ -169,12 +194,6 @@ def heaterOn():
 def heaterOff():
   heater.updateState(0)
   GPIO.output(heater.pin,heater.relayState)
-def humidifierOn():
-  humidifier.updateState(1)
-  GPIO.output(humidifier.pin,humidifier.relayState)
-def humidifierOff():
-  humidifier.updateState(0)
-  GPIO.output(humidifier.pin,humidifier.relayState)
 def dehumidifierOn():
   dehumidifier.updateState(1)
   GPIO.output(dehumidifier.pin,dehumidifier.relayState)
@@ -253,8 +272,6 @@ def relayAdjustments():
     else:
       fridgeOn()
     heaterOff()
-    #Turn on humidifier with fridge to limit the sudden drop in humidity.
-    humidifierOn()
     print "Temperature too high. Turning on refrigerator."
   elif temperature < (desiredTemperature - driftTemperature):
     if hasattr(fridge, 'startTimer'):
@@ -301,7 +318,7 @@ def relayAdjustments():
       humidifierOn()
       dehumidifierOff()
       print "Humidity too low. Turning on humidifier."
-    elif (desiredHumidity - driftHumidity) <= humidity <= (desiredHumidity + driftHumidity):
+    elif ((desiredHumidity - driftHumidity) <= humidity <= (desiredHumidity + driftHumidity)) and (humidifier.override != 1):
       humidifierOff()
       dehumidifierOff()
       print "Humidity is within range!"
