@@ -102,8 +102,10 @@ r = requests.post(url, data=payload, headers=headers)
 
 #Create class for watching relay states.
 class Relay:
-  def __init__(self, pin):
+  def __init__(self, name, pin):
     self.pin = pin
+    self.name = name
+    print self.name
     GPIO.setup(self.pin,GPIO.OUT)
   def setState(self, state):
     self.relayState = state
@@ -124,6 +126,11 @@ class Relay:
     self.stallStop = datetime.now()
   def setOverride(self, override):
     self.override = override
+  def influxRelayOutput(self):
+    url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    self.RelayStatePayload = "%s,chamber=%s,stateChange=%d value=%d %d\n" % (self.name, chamberName, self.stateChange, self.relayState, seconds)
+    r = requests.post(url, data=self.RelayStatePayload, headers=headers)
 
 def getRelayState():
   #Create fridge object from Relayclass and get it's initial state.
@@ -131,7 +138,7 @@ def getRelayState():
     fridge
   except NameError:
     global fridge
-    fridge = Relay(fridgeRelayPin)
+    fridge = Relay("fridgeRelayState", fridgeRelayPin)
   fridge.setState(GPIO.input(fridge.pin))
 
   #Create heater object from Relayclass and get it's initial state.
@@ -139,7 +146,7 @@ def getRelayState():
     heater
   except NameError:
     global heater
-    heater = Relay(heaterRelayPin)
+    heater = Relay("heaterRelayState", heaterRelayPin)
   heater.setState(GPIO.input(heater.pin))
 
   #Create humidifier object from Relayclass and get it's initial state.
@@ -147,15 +154,16 @@ def getRelayState():
     humidifier
   except NameError:
     global humidifier
-    humidifier = Relay(humidifierRelayPin)
+    humidifier = Relay("humidifierRelayState", humidifierRelayPin)
   humidifier.setState(GPIO.input(humidifier.pin))
+  humidifier.setOverride(0)
 
   #Create dehumidifier object from Relayclass and get it's initial state.
   try:
     dehumidifier
   except NameError:
     global dehumidifier
-    dehumidifier = Relay(dehumidifierRelayPin)
+    dehumidifier = Relay("dehumidifierRelayState", dehumidifierRelayPin)
   dehumidifier.setState(GPIO.input(dehumidifier.pin))
 
 
@@ -163,10 +171,12 @@ def getRelayState():
 def humidifierOn():
   humidifier.updateState(1)
   GPIO.output(humidifier.pin,humidifier.relayState)
+  humidifier.influxRelayOutput()
 def humidifierOff():
   humidifier.updateState(0)
   GPIO.output(humidifier.pin,humidifier.relayState)
-  humidifier.override(0)
+  humidifier.influxRelayOutput()
+  #humidifier.override(0)
 def fridgeOn():
   humidifier.setOverride(1)
   humidifierOn()
@@ -185,21 +195,27 @@ def fridgeOn():
 def fridgeOnFinal():
   fridge.updateState(1)
   GPIO.output(fridge.pin,fridge.relayState)
+  fridge.influxRelayOutput()
 def fridgeOff():
   fridge.updateState(0)
   GPIO.output(fridge.pin,fridge.relayState)
+  fridge.influxRelayOutput()
 def heaterOn():
   heater.updateState(1)
   GPIO.output(heater.pin,heater.relayState)
+  heater.influxRelayOutput()
 def heaterOff():
   heater.updateState(0)
   GPIO.output(heater.pin,heater.relayState)
+  heater.influxRelayOutput()
 def dehumidifierOn():
   dehumidifier.updateState(1)
   GPIO.output(dehumidifier.pin,dehumidifier.relayState)
+  dehumidifier.influxRelayOutput()
 def dehumidifierOff():
   dehumidifier.updateState(0)
   GPIO.output(dehumidifier.pin,dehumidifier.relayState)
+  dehumidifier.influxRelayOutput()
 
 
 #Function for getting temp/humidity readings.
@@ -236,24 +252,6 @@ def influxSensorOutput():
   #Influxdb doesn't allow you to query tags based on time so here's some redundant measurements. Wheeee!
   paramsPayloadTemp = "params,chamber=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (chamberName, desiredTemperature, driftTemperature, desiredTemperature, seconds)
   r = requests.post(url, data=paramsPayloadTemp, headers=headers)
-
-
-#Output relay states to Influxdb.
-def influxRelayOutput():
-  url = 'http://%s:%s/write?db=%s&precision=s' % (dbIP, dbPort, dbName)
-  headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-  #fridge #####################
-  fridgeRelayStatePayload = "fridgeRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, fridge.stateChange, fridge.relayState, seconds)
-  r = requests.post(url, data=fridgeRelayStatePayload, headers=headers)
-  #heater #####################
-  heaterRelayStatePayload = "heaterRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, heater.stateChange, heater.relayState, seconds)
-  r = requests.post(url, data=heaterRelayStatePayload, headers=headers)
-  #humidifier #################
-  humidifierRelayStatePayload = "humidifierRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, humidifier.stateChange, humidifier.relayState, seconds)
-  r = requests.post(url, data=humidifierRelayStatePayload, headers=headers)
-  #dehumidifier
-  dehumidifierRelayStatePayload = "dehumidifierRelayState,chamber=%s,stateChange=%d value=%d %d\n" % (chamberName, dehumidifier.stateChange, dehumidifier.relayState, seconds)
-  r = requests.post(url, data=dehumidifierRelayStatePayload, headers=headers)
 
 
 #Function to set relays based on sensor readings.
@@ -310,7 +308,7 @@ def relayAdjustments():
       if fridge.relayState == 1:
         humidifierOn()
         dehumidifierOff()
-      elif fridge.relayState == 0:
+      elif (fridge.relayState == 0) and (humidifier.override != 1):
         humidifierOff()
         dehumidifierOn()
       print "Humidity too high. Turning off humidifier."
@@ -325,9 +323,6 @@ def relayAdjustments():
     else:
       print "Humidity is within range!"
 
-  #Update the current relay state and send state information to Influxdb
-  influxRelayOutput()
-
 
 #Loop through all sensors and get a reading.
 def sensorLoop():
@@ -337,15 +332,11 @@ def sensorLoop():
     seconds = int(time.time())
     if allSensors[0]:
       getRelayState()
-    #   if hasattr(dehumidifier, 'startTimer'):
-    #     print "DEHUMIDIFIER Timer!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    #     dehumidifier.updateTimer()
-    #     dehumidifierTimer = dehumidifier.stopTimer - dehumidifier.startTimer
-    #     print(dehumidifierTimer.total_seconds())
     sensorReading()
     #time.sleep(3)
     if allSensors[sensorIndex] == allSensors[-1]:
       print "last sensor has been read, sleeping %s seconds.............................\n\n" %sensorSleep
+      print humidifier.override
       time.sleep(sensorSleep)
 
 #Run this sucker continually.
