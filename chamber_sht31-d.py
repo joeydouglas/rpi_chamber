@@ -31,6 +31,8 @@ driftHumidity = 1
 sensorSleep = 5
 #How long must the fridge be on/off for? This prevents the fridge from cycling on/off every few seconds.
 fridgeCycle = 60
+#Turn humidifier on and stall the fridge from turning on for a number of seconds to lessen the impact on the humidity.
+fridgeStall = 20
 
 
 #Set timestamp in seconds. Only change if you need time accuracy beyond seconds.
@@ -140,7 +142,6 @@ def getRelayState():
     global fridge
     fridge = Relay("fridgeRelayState", fridgeRelayPin)
   fridge.setState(GPIO.input(fridge.pin))
-
   #Create heater object from Relayclass and get it's initial state.
   try:
     heater
@@ -148,7 +149,6 @@ def getRelayState():
     global heater
     heater = Relay("heaterRelayState", heaterRelayPin)
   heater.setState(GPIO.input(heater.pin))
-
   #Create humidifier object from Relayclass and get it's initial state.
   try:
     humidifier
@@ -157,7 +157,6 @@ def getRelayState():
     humidifier = Relay("humidifierRelayState", humidifierRelayPin)
   humidifier.setState(GPIO.input(humidifier.pin))
   humidifier.setOverride(0)
-
   #Create dehumidifier object from Relayclass and get it's initial state.
   try:
     dehumidifier
@@ -173,25 +172,24 @@ def humidifierOn():
   GPIO.output(humidifier.pin,humidifier.relayState)
   humidifier.influxRelayOutput()
 def humidifierOff():
-  humidifier.updateState(0)
-  GPIO.output(humidifier.pin,humidifier.relayState)
+  if fridge.relayState == 0:
+    humidifier.updateState(0)
+    GPIO.output(humidifier.pin,humidifier.relayState)
   humidifier.influxRelayOutput()
-  #humidifier.override(0)
 def fridgeOn():
   humidifier.setOverride(1)
   humidifierOn()
-  fridgeStall = 20
   fridge.stallTimerCreate()
   fridge.stallTimerUpdate()
   stallTimer = fridge.stallStop - fridge.stallStart
   while (stallTimer.total_seconds() < fridgeStall):
-    print 'Running Humidifier for 30 seconds before turning on Fridge*********'
+    print 'Running Humidifier for %d seconds before turning on Fridge*********' % fridgeStall
     print stallTimer.total_seconds()
     time.sleep(5)
     fridge.stallTimerUpdate()
     stallTimer = fridge.stallStop - fridge.stallStart
-  fridgeOnFinal()
   humidifier.setOverride(0)
+  fridgeOnFinal()
 def fridgeOnFinal():
   fridge.updateState(1)
   GPIO.output(fridge.pin,fridge.relayState)
@@ -253,62 +251,53 @@ def influxSensorOutput():
   paramsPayloadTemp = "params,chamber=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (chamberName, desiredTemperature, driftTemperature, desiredTemperature, seconds)
   r = requests.post(url, data=paramsPayloadTemp, headers=headers)
 
+def fridgeCycleOn():
+  if hasattr(fridge, 'startTimer'):
+    fridge.updateTimer()
+    fridgeTimer = fridge.stopTimer - fridge.startTimer
+    print "Fridge Cycle Timer------------%d" % (fridgeTimer.total_seconds())
+    if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 0):
+      print "Fridge cycle length has been met."
+      fridgeOn()
+      print "Fridge turning on!"
+  else:
+    fridgeOn()
+
+def fridgeCycleOff():
+  if hasattr(fridge, 'startTimer'):
+    fridge.updateTimer()
+    fridgeTimer = fridge.stopTimer - fridge.startTimer
+    print "Fridge Cycle Timer------------%d" % (fridgeTimer.total_seconds())
+    if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 1):
+      print "Fridge has been on long enough!!!!!!!!!!!!!!!!!"
+      fridgeOff()
+      print "Fridge turning off!"
+  else:
+    fridgeOff()
 
 #Function to set relays based on sensor readings.
 def relayAdjustments():
   #Temperature (Fridge and heater).
   if temperature > (desiredTemperature + driftTemperature):
-    if hasattr(fridge, 'startTimer'):
-      print "FRIDGE Timer-----"
-      fridge.updateTimer()
-      fridgeTimer = fridge.stopTimer - fridge.startTimer
-      print(fridgeTimer.total_seconds())
-      if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 0):
-        print "Fridge has been off long enough!!!!!!!!!!!!!!!!!"
-        fridgeOn()
-        print "Fridge turning on!"
-    else:
-      fridgeOn()
+    fridgeCycleOn()
     heaterOff()
     print "Temperature too high. Turning on refrigerator."
   elif temperature < (desiredTemperature - driftTemperature):
-    if hasattr(fridge, 'startTimer'):
-      print "FRIDGE Timer-----"
-      fridge.updateTimer()
-      fridgeTimer = fridge.stopTimer - fridge.startTimer
-      print(fridgeTimer.total_seconds())
-      if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 1):
-        print "Fridge has been on long enough!!!!!!!!!!!!!!!!!"
-        fridgeOff()
-        print "Fridge turning off!"
-    else:
-      fridgeOff()
+    fridgeCycleOff()
     heaterOn()
     print "Temperature too low. Turning off refrigerator."
   elif (desiredTemperature - driftTemperature) <= temperature <= (desiredTemperature + driftTemperature):
-    if hasattr(fridge, 'startTimer'):
-      print "FRIDGE Timer-----"
-      fridge.updateTimer()
-      fridgeTimer = fridge.stopTimer - fridge.startTimer
-      print(fridgeTimer.total_seconds())
-      if (fridgeTimer.total_seconds() > fridgeCycle) and (fridge.relayState == 1):
-        print "Fridge has been on long enough!!!!!!!!!!!!!!!!!!!!"
-        fridgeOff()
-        print "Fridge turning off!"
-    else:
-      fridgeOff()
+    fridgeCycleOff()
     heaterOff()
-    print "Temperature is within range!"
-  else:
     print "Temperature is within range!"
 
   #Humidity (Humidifier and dehumidifier).
   if humidity is not None and humidity < 105:
     if humidity > (desiredHumidity + driftHumidity):
-      if fridge.relayState == 1:
+      if fridge.relayState == 1: #we always want the humifier on if the fridge is on.
         humidifierOn()
         dehumidifierOff()
-      elif (fridge.relayState == 0) and (humidifier.override != 1):
+      elif (fridge.relayState == 0) and (humidifier.override != 1): #don't turn off the humidifier if the override is on.
         humidifierOff()
         dehumidifierOn()
       print "Humidity too high. Turning off humidifier."
