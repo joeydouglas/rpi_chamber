@@ -1,6 +1,5 @@
 #!/usr/bin/python
 import config
-import output
 import RPi.GPIO as GPIO
 import time
 from datetime import datetime
@@ -38,13 +37,13 @@ class Relay:
   def stall_timer_create(self):
     self.stallStart = datetime.now()
   def stall_timer_update(self):
-    self.stall_stop = datetime.now()
+    self.stallStop = datetime.now()
   def set_override(self, override):
     self.override = override
   def influx_relay_output(self):
     url = 'http://%s:%s/write?db=%s&precision=s' % (config.db_ip, config.db_port, config.db_name)
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    self.relay_state_payload = "%s,chamber=%s,state_change=%d value=%d %d\n" % (self.name, config.chamber_name, self.state_change, self.relay_state, config.seconds)
+    self.relay_state_payload = "%s,chamber=%s,stateChange=%d value=%d %d\n" % (self.name, config.chamber_name, self.state_change, self.relay_state, config.seconds)
     r = requests.post(url, data=self.relay_state_payload, headers=headers)
 
 def get_relay_state():
@@ -93,13 +92,13 @@ def fridge_on():
   humidifier_on()
   fridge.stall_timer_create()
   fridge.stall_timer_update()
-  stall_timer = fridge.stall_stop - fridge.stallStart
+  stall_timer = fridge.stallStop - fridge.stallStart
   while (stall_timer.total_seconds() < config.fridge_stall):
     print 'Running Humidifier for %d seconds before turning on Fridge*********' % config.fridge_stall
     print stall_timer.total_seconds()
     time.sleep(5)
     fridge.stall_timer_update()
-    stall_timer = fridge.stall_stop - fridge.stallStart
+    stall_timer = fridge.stallStop - fridge.stallStart
   humidifier.set_override(0)
   fridge_on_final()
 def fridge_on_final():
@@ -127,20 +126,6 @@ def dehumidifier_off():
   GPIO.output(dehumidifier.pin, dehumidifier.relay_state)
   dehumidifier.influx_relay_output()
 
-#Function to output temperature and humidity readings to Influxdb.
-def influx_sensor_output():
-  url = 'http://%s:%s/write?db=%s&precision=s' % (config.db_ip, config.db_port, config.db_name)
-  headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-  temperature_payload = "temperature,chamber=%s,sensor=%s,location=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (config.chamber_name, config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], config.desired_temperature, config.drift_temperature, temperature, config.seconds)
-  print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
-  r = requests.post(url, data=temperature_payload, headers=headers)
-  #print temperature_payload
-  humidity_payload = "humidity,chamber=%s,sensor=%s,location=%s,desiredHumidity=%.1f,driftHumidity=%s value=%.1f %d\n" % (config.chamber_name, config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], config.desired_humidity, config.drift_humidity, humidity, config.seconds)
-  r = requests.post(url, data=humidity_payload, headers=headers)
-  #Influxdb doesn't allow you to query tags based on time so here's some redundant measurements. Wheeee!
-  params_payload_temp = "params,chamber=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (config.chamber_name, config.desired_temperature, config.drift_temperature, config.desired_temperature, config.seconds)
-  r = requests.post(url, data=params_payload_temp, headers=headers)
-
 #Function for getting temp/humidity readings.
 def sensor_reading():
   print "Reading %s, %s (ID %d)" % (config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], sensor_index)
@@ -161,6 +146,19 @@ def sensor_reading():
   else:
     print('Failed to get reading. Try again!')
 
+#Function to output temperature and humidity readings to Influxdb.
+def influx_sensor_output():
+  url = 'http://%s:%s/write?db=%s&precision=s' % (config.db_ip, config.db_port, config.db_name)
+  headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+  temperature_payload = "temperature,chamber=%s,sensor=%s,location=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (config.chamber_name, config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], config.desired_temperature, config.drift_temperature, temperature, config.seconds)
+  print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
+  r = requests.post(url, data=temperature_payload, headers=headers)
+  #print temperature_payload
+  humidity_payload = "humidity,chamber=%s,sensor=%s,location=%s,desiredHumidity=%.1f,driftHumidity=%s value=%.1f %d\n" % (config.chamber_name, config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], config.desired_humidity, config.drift_humidity, humidity, config.seconds)
+  r = requests.post(url, data=humidity_payload, headers=headers)
+  #Influxdb doesn't allow you to query tags based on time so here's some redundant measurements. Wheeee!
+  params_payload_temp = "params,chamber=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (config.chamber_name, config.desired_temperature, config.drift_temperature, config.desired_temperature, config.seconds)
+  r = requests.post(url, data=params_payload_temp, headers=headers)
 
 def fridge_cycle_on():
   if hasattr(fridge, 'startTimer'):
