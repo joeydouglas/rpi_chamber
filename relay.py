@@ -10,7 +10,7 @@ class Relay:
   def __init__(self, name, pin):
     self.pin = pin
     self.name = name
-    print self.name
+    print 'Creating %s' % self.name
     GPIO.setup(self.pin,GPIO.OUT)
   def set_state(self, state):
     self.relay_state = state

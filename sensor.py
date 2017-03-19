@@ -35,7 +35,6 @@ def sensor_loop():
     sensor_reading()
     if config.all_sensors[sensor_index] == config.all_sensors[-1]:
       print "last sensor has been read, sleeping %s seconds.............................\n\n" % config.sensor_sleep
-      print relay.humidifier.override
       time.sleep(config.sensor_sleep)
 
 
@@ -46,7 +45,6 @@ def influx_sensor_output():
   temperature_payload = "temperature,chamber=%s,sensor=%s,location=%s,desiredTemperature=%.1f,driftTemperature=%s value=%.1f %d\n" % (config.chamber_name, config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], config.desired_temperature, config.drift_temperature, temperature, config.seconds)
   print('Temp={0:0.1f}*C  Humidity={1:0.1f}%\n'.format(temperature, humidity))
   r = requests.post(url, data=temperature_payload, headers=headers)
-  #print temperature_payload
   humidity_payload = "humidity,chamber=%s,sensor=%s,location=%s,desiredHumidity=%.1f,driftHumidity=%s value=%.1f %d\n" % (config.chamber_name, config.all_sensors[sensor_index][3], config.all_sensors[sensor_index][2], config.desired_humidity, config.drift_humidity, humidity, config.seconds)
   r = requests.post(url, data=humidity_payload, headers=headers)
   #Influxdb doesn't allow you to query tags based on time so here's some redundant measurements. Wheeee!
